@@ -52,22 +52,9 @@ Multi_mrk <- function(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_meth
                                 "6" = "3UTR")) %>% dplyr::select(TargetID = probeID,GeneGroup)
   }
 
-
   # First combine DM and eQTM
   suppressMessages(com1 <- left_join(DM_df,eQTM_df) %>% left_join(probeInfo) %>%
                      filter(complete.cases(.)))
-  # Count significant DM within gene
-  if(filter_type == "prop"){
-    com1 <- com1 %>% group_by(RefGene) %>% mutate(Num_cpg = n()) %>%
-      mutate(across(ct_ind, function(i){
-        sum(p.adjust(i,method = 'fdr') < pval_threshold)/Num_cpg
-      }, .names = "{.col}_DMR"))
-  }else{
-    com1 <- com1 %>% group_by(RefGene) %>%
-      mutate(across(ct_ind, function(i){
-        sum(p.adjust(i,method = 'fdr') < pval_threshold)
-      }, .names = "{.col}_DMR"))
-  }
   eqval <- com1$eQTM_pval
   com1 <-com1 %>% ungroup() %>% mutate_at({{ct_ind}},function(p) {
     p[p>1]=1
@@ -76,9 +63,20 @@ Multi_mrk <- function(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_meth
 
   # Adjust pvalue
   com1 <-com1 %>%   mutate_at({{ct_ind}},function(p) {p.adjust(p,method = padjust_method)})
-
+  # Count significant DM within gene
+  if(filter_type == "prop"){
+    com2 <- com1 %>% group_by(RefGene) %>% mutate(Num_cpg = n()) %>%
+      mutate(across(ct_ind, function(i){
+        sum(i < pval_threshold)/Num_cpg
+      }, .names = "{.col}_DMR"))
+  }else{
+    com2 <- com1 %>% group_by(RefGene) %>%
+      mutate(across(ct_ind, function(i){
+        sum(i < pval_threshold)
+      }, .names = "{.col}_DMR"))
+  }
   # Combine with DE
-  suppressMessages(com3 <- com1 %>% left_join(DE_df))
+  suppressMessages(com3 <- com2 %>% left_join(DE_df))
 
   output <- lapply(ct_ind, function(i){
     sub = paste0(i,"_DMR")
