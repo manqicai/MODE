@@ -69,7 +69,7 @@ Multi_mrk <- function(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_meth
       }, .names = "{.col}_DMR"))
   }
   eqval <- com1$eQTM_pval
-  com1 <-com1 %>% mutate_at({{ct_ind}},function(p) {
+  com1 <-com1 %>% ungroup() %>% mutate_at({{ct_ind}},function(p) {
     p[p>1]=1
     return(p)}) %>%
     mutate_at({{ct_ind}},function(p) {ACAT(t(matrix(c(p,eqval),ncol = 2)))})

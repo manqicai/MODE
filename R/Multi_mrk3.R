@@ -80,7 +80,7 @@ Multi_mrk3 <- function(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_met
 
   # Second combine DM, DE and eQTM
   eqval <- com1$eQTM_pval
-  com2 <-com1 %>% mutate_at({{ct_ind}},function(p) {
+  com2 <-com1 %>% ungroup() %>% mutate_at({{ct_ind}},function(p) {
     p[p>1]=1
     return(p)})
   for (i in ct_ind) {
