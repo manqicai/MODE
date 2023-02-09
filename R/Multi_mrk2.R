@@ -72,12 +72,12 @@ Multi_mrk2 <- function(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_met
   if(filter_type == "prop"){
     com2 <- com1 %>% group_by(RefGene) %>% mutate(Num_cpg = n()) %>%
       mutate(across(ct_ind, function(i){
-        sum(i < pval_threshold)/Num_cpg
+        sum(p.adjust(i,method = 'fdr') < pval_threshold)/Num_cpg
       }, .names = "{.col}_DMR"))
   }else{
     com2 <- com1 %>% group_by(RefGene) %>%
       mutate(across(ct_ind, function(i){
-        sum(i < pval_threshold)
+        sum(p.adjust(i,method = 'fdr') < pval_threshold)
       }, .names = "{.col}_DMR"))
   }
   output <- lapply(ct_ind, function(i){
