@@ -1,0 +1,353 @@
+---
+title: "Multi_mrk"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+date: "2023-02-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+source("D:/Manqi/Package/MODE/R/Multi_mrk.R")
+source("D:/Manqi/Package/MODE/R/Multi_mrk2.R")
+source("D:/Manqi/EnsDeconv/R/CTS_EnsDeconv_wrapper.R")
+source("D:/Manqi/EnsDeconv/R/CTS_EnsDeconv_LS.R")
+source("D:/Manqi/deconv.ensemble/R/process_all.R")
+source("D:/Manqi/deconv.ensemble/R/analysis_wrap.R")
+source("D:/Manqi/deconv.ensemble/R/ensemble_prep.R")
+source("D:/Manqi/deconv.ensemble/R/analyze_dset.R")
+source("D:/Manqi/deconv.ensemble/R/get_metric_wrap.R")
+source("D:/Manqi/Meeting/20221027/utilities.R")
+source("D:/Manqi/Meeting/20221023/utilities.R")
+library(dplyr)
+library(tidyverse)
+library(data.table)
+library(readr)
+library(ACAT)
+library(quadprog)
+load("D:/Manqi/Meeting/20230116_19/allcells_fisher.RData")
+sig_all <- meth4/coverage4
+rownames(sig_all) <- meta$TargetID
+sig_all <- sig_all[complete.cases(sig_all),]
+load("D:/Manqi/Meeting/202301300202/Luo_mrks_upregulated_twosided_all.RData")
+
+eQTM_df <- read_csv("D:/Manqi/Meeting/202301300202/cpg_gene_cor_pval.csv") %>%
+  select(TargetID = cpg, RefGene = gene, eQTM_pval = pval)
+ct_ind <- c("Astro","Micro_Endo", "Neuro","Oligo_MBP")
+meta = as.data.frame(fread('E:\\ROSMAP\\ROSMAP_arrayMethylation_metaData.tsv'))
+meta$CHR = as.character(meta$CHR)
+rownames(meta) = paste0(meta$CHR, ":", meta$MAPINFO)
+DE_meta <- readRDS("D:/Manqi/Meeting/20230116_19/Darmanis_pval.rds") %>% select(TargetID,RefGene)
+LuoMrk_twosided_targetID <- lapply(1:4, function(i){
+  sub = meta[names(Mrk_twosided[[i]]),]
+  names(Mrk_twosided[[i]]) = sub$TargetID
+  dat = data.frame(TargetID = names(Mrk_twosided[[i]]),pval = Mrk_twosided[[i]])
+  colnames(dat)[2] =ct_ind[i]
+  return(dat)
+})
+
+suppressMessages(DM_df <- Reduce(full_join,LuoMrk_twosided_targetID)
+                 %>% left_join(DE_meta) %>% select(TargetID,RefGene,everything()))
+
+
+LuoMrk_onesided_targetID <- lapply(1:4, function(i){
+  sub = meta[names(Mrk[[i]]),]
+  names(Mrk[[i]]) = sub$TargetID
+  dat = data.frame(TargetID = names(Mrk[[i]]),pval = Mrk[[i]])
+  colnames(dat)[2] =ct_ind[i]
+  return(dat)
+})
+
+suppressMessages(DM_df_onesided <- Reduce(full_join,LuoMrk_onesided_targetID)
+                 %>% left_join(DE_meta) %>% select(TargetID,RefGene,everything()))
+
+DE_df <- readRDS("D:/Manqi/Meeting/202301300202/Darmanis_rna_pval_twosided.rds") %>%
+  filter(RefGene %in% DE_meta$RefGene) %>%
+  select(RefGene,Astro_DE = pval_rna_ast, Micro_Endo_DE = pval_rna_mic_en, Neuro_DE =pval_rna_neu, Oligo_MBP_DE = pval_rna_oli)
+
+DE_df_onesided <- readRDS("D:/Manqi/Meeting/202301300202/Darmanis_rna_pval_upreg.rds") %>%
+  filter(RefGene %in% DE_meta$RefGene) %>%
+  select(RefGene,Astro_DE = pval_rna_ast, Micro_Endo_DE = pval_rna_mic_en, Neuro_DE =pval_rna_neu, Oligo_MBP_DE = pval_rna_oli)
+
+library(EnsDeconv)
+library(tidyverse) # make this EnsDeconv's dependence package in DESCRIPTION
+library(sparseMatrixStats)
+load("D:/Manqi/data/ROS/ROSDNA_bulk_meta_trueProp.RData")
+ROS_true_4ct <- ROS_true/rowSums(ROS_true)
+ROS_true_4ct[,2] <- ROS_true_4ct[,2]+ROS_true_4ct[,3]
+ROS_true_4ct <- ROS_true_4ct[,-3]
+colnames(ROS_true_4ct)[c(2,4)] = c("Micro_Endo","Oligo_MBP")
+```
+
+
+# Two & one sided
+```{r include=FALSE}
+new_params <- expand.grid(pval_threshold = c(0.01,0.03,0.05),
+                      filter_type = "prop",cutoff_val = c(0.7,0.8,0.9),DE_type = "top",cutoff_DE = seq(100,500,by = 100))
+new_params2 <- expand.grid(pval_threshold = c(0.01,0.03,0.05),
+                      filter_type = "count",cutoff_val = c(5,10,20,50,60,70,80,90,100),DE_type = "top",cutoff_DE = seq(100,500,by = 100))
+
+com_params <- rbind(new_params,new_params2)
+
+
+library(doParallel)
+library(doSNOW)
+library(progress)
+pb <- progress_bar$new(
+      format = "Current : :current [:bar] :elapsed | percent: :percent",
+      total = nrow(com_params),
+      clear = FALSE,
+      force = TRUE,
+      width = 60)
+
+    progress_letter <- rep(1:10, 10)  # token reported in progress bar
+
+    # allowing progress bar to be used in foreach -----------------------------
+    progress <- function(n){
+      pb$tick(tokens = list(letter = progress_letter[n]))
+    }
+
+
+opts <- list(progress = progress)
+
+cl <- makeCluster(20)
+registerDoSNOW(cl)
+clusterCall(cl, function(x) .libPaths(x), .libPaths())
+res <- foreach(rownum = 1:nrow(com_params), .export=c("Multi_mrk"),.packages=c("dplyr","reshape2","tidyverse","EnsDeconv","ACAT","sparseMatrixStats","tidyverse","MIND","minfi","bumphunter","quadprog"),.options.snow=opts, .errorhandling = 'pass') %dopar% {
+    sig_name = paste0(unlist(paste0(colnames(com_params),"_", com_params[rownum,])), collapse = "")
+    output <- Multi_mrk(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_method = "bonferroni",
+                      ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
+                      filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = sig_all,sig_name = sig_name)
+  output_onesided <- Multi_mrk(DM_df = DM_df_onesided,eQTM_df = eQTM_df,DE_df = DE_df_onesided,padjust_method = "bonferroni",
+                      ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
+                      filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = sig_all,sig_name = sig_name)
+  
+  output2 <- Multi_mrk2(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_method = "bonferroni",
+                      ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
+                      filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = sig_all,sig_name = sig_name)
+  output_onesided2 <- Multi_mrk2(DM_df = DM_df_onesided,eQTM_df = eQTM_df,DE_df = DE_df_onesided,padjust_method = "bonferroni",
+                      ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
+                      filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = sig_all,sig_name = sig_name)
+  return(list(output = output,output_onesided = output_onesided,
+              output2 = output2,output_onesided2 = output_onesided2))
+}
+stopCluster(cl)
+```
+
+```{r}
+twosided_res <- sapply(res, function(i){
+  i[[1]][[3]]
+})
+range(twosided_res[1:45])
+range(twosided_res[46:180])
+
+onesided_res <- sapply(res, function(i){
+  i[[2]][[3]]
+})
+
+range(onesided_res[1:45])
+range(onesided_res[46:180])
+
+twosided_res3 <- sapply(res, function(i){
+  i[[3]][[3]]
+})
+range(twosided_res3[1:45])
+range(twosided_res3[46:180])
+
+onesided_res4 <- sapply(res, function(i){
+  i[[4]][[3]]
+})
+
+range(onesided_res4[1:45])
+range(onesided_res4[46:180])
+```
+
+# One sided all 
+```{r}
+
+onesided_res2<- lapply(res[46:180], function(i){
+  i[[2]][[2]][[2]]
+})
+
+onesided_res2 <- unlist(onesided_res2,recursive = F)
+ind = sapply(onesided_res2, function(x){
+    length(x[["a"]][["p_hat"]][[1]])
+  })
+onesided_res2 = onesided_res2[which(ind == 1)]
+EnsDeconv_p = CTS_EnsDeconv_wrapper(onesided_res2)
+
+mean(diag(cor(EnsDeconv_p$ensemble_p, ROS_true_4ct, method = 's')))
+```
+
+# Two sided all 
+```{r}
+
+twosided_res3<- lapply(res[46:180], function(i){
+  i[[3]][[2]][[2]]
+})
+
+twosided_res3 <- unlist(twosided_res3,recursive = F)
+ind = sapply(twosided_res3, function(x){
+    length(x[["a"]][["p_hat"]][[1]])
+  })
+twosided_res3 = twosided_res3[which(ind == 1)]
+EnsDeconv_p = CTS_EnsDeconv_wrapper(twosided_res3)
+
+mean(diag(cor(EnsDeconv_p$ensemble_p, ROS_true_4ct, method = 's')))
+```
+
+```{r include=FALSE}
+com_params <- expand.grid(pval_threshold = c(0.05),
+                      filter_type = "count",cutoff_val = c(20,50,60,70,80,90),DE_type = "top",cutoff_DE = seq(100,500,by = 100))
+
+pb <- progress_bar$new(
+      format = "Current : :current [:bar] :elapsed | percent: :percent",
+      total = nrow(com_params),
+      clear = FALSE,
+      force = TRUE,
+      width = 60)
+
+    progress_letter <- rep(1:10, 10)  # token reported in progress bar
+
+    # allowing progress bar to be used in foreach -----------------------------
+    progress <- function(n){
+      pb$tick(tokens = list(letter = progress_letter[n]))
+    }
+
+
+opts <- list(progress = progress)
+
+cl <- makeCluster(20)
+registerDoSNOW(cl)
+clusterCall(cl, function(x) .libPaths(x), .libPaths())
+res_sub <- foreach(rownum = 1:nrow(com_params), .export=c("Multi_mrk"),.packages=c("dplyr","reshape2","tidyverse","EnsDeconv","ACAT","sparseMatrixStats","tidyverse","MIND","minfi","bumphunter","quadprog"),.options.snow=opts, .errorhandling = 'pass') %dopar% {
+    sig_name = paste0(unlist(paste0(colnames(com_params),"_", com_params[rownum,])), collapse = "")
+  output_onesided <- Multi_mrk(DM_df = DM_df_onesided,eQTM_df = eQTM_df,DE_df = DE_df_onesided,padjust_method = "bonferroni",
+                      ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
+                      filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = sig_all,sig_name = sig_name)
+  
+  output2 <- Multi_mrk2(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_method = "bonferroni",
+                      ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
+                      filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = sig_all,sig_name = sig_name)
+  return(list(output_onesided = output_onesided,output2 = output2))
+}
+stopCluster(cl)
+```
+
+```{r}
+onesided_res_new<- lapply(res_sub, function(i){
+  i[[1]][[2]][[2]]
+})
+
+onesided_res_new <- unlist(onesided_res_new,recursive = F)
+
+ind = sapply(onesided_res_new, function(x){
+    length(x[["a"]][["p_hat"]][[1]])
+  })
+onesided_res_new = onesided_res_new[which(ind == 1)]
+EnsDeconv_p = CTS_EnsDeconv_wrapper(onesided_res_new)
+
+mean(diag(cor(EnsDeconv_p$ensemble_p, ROS_true_4ct, method = 's')))
+
+twosided_res_new<- lapply(res_sub, function(i){
+  i[[2]][[2]][[2]]
+})
+
+twosided_res_new <- unlist(twosided_res_new,recursive = F)
+
+ind = sapply(twosided_res_new, function(x){
+    length(x[["a"]][["p_hat"]][[1]])
+  })
+twosided_res_new = twosided_res_new[which(ind == 1)]
+EnsDeconv_p = CTS_EnsDeconv_wrapper(twosided_res_new)
+
+mean(diag(cor(EnsDeconv_p$ensemble_p, ROS_true_4ct, method = 's')))
+```
+```{r include=FALSE}
+cl <- makeCluster(20)
+registerDoSNOW(cl)
+clusterCall(cl, function(x) .libPaths(x), .libPaths())
+res_ROS_out_all <- foreach(i = 1:length(onesided_res_new), .export=c("get_metric_wrap", "ExportRes_all_new","getOutput_ensemble_cv","ord_name","sum_to_one"),.packages=c("dplyr","reshape2","tidyverse")) %dopar% {
+    ress <- get_metric_wrap(onesided_res_new[[i]], true = ROS_true_4ct,trueMet ="ROS" )
+    ress <- ExportRes_all_new(ress)
+    return(ress)
+}
+stopCluster(cl)
+
+res_ROS_out_all <- bind_rows(res_ROS_out_all)
+
+cl <- makeCluster(20)
+registerDoSNOW(cl)
+clusterCall(cl, function(x) .libPaths(x), .libPaths())
+res_ROS_out_all2 <- foreach(i = 1:length(twosided_res_new), .export=c("get_metric_wrap", "ExportRes_all_new","getOutput_ensemble_cv","ord_name","sum_to_one"),.packages=c("dplyr","reshape2","tidyverse")) %dopar% {
+    ress <- get_metric_wrap(twosided_res_new[[i]], true = ROS_true_4ct,trueMet ="ROS" )
+    ress <- ExportRes_all_new(ress)
+    return(ress)
+}
+stopCluster(cl)
+
+res_ROS_out_all2 <- bind_rows(res_ROS_out_all2)
+```
+
+```{r}
+library(ggpubr)
+library(ggsci)
+celltype_col = pal_lancet("lanonc")(4)
+new = res_ROS_out_all %>% group_by(CellType,Method) %>%
+  mutate(Spearman_mean = mean(Spearman,na.rm = T),
+         Method = ifelse(Method == "EnsDeconv","EnsDeconv",Method)) 
+
+checkkkk =new %>% group_by(CellType,Method) %>%  
+  mutate(p_mean = mean(Spearman_mean,na.rm = T),
+         Method = ifelse(Method == "EnsDeconv","EnsDeconv",Method)) %>% 
+  dplyr::filter(!str_detect(Method,"fold|allgene|mean|Mean")) 
+
+new %>% ggerrorplot("Method", "Spearman_mean",order = levels(reorder(checkkkk$Method, checkkkk$p_mean, median, order = TRUE)), 
+desc_stat = "median_mad", error.plot = "errorbar")+
+  geom_point(aes(color =CellType),size = 4)+      scale_color_manual(
+    values=celltype_col)+ theme(legend.title = element_blank(),
+    legend.text=element_text(size=12),plot.title = element_text(hjust = 0.5))+xlab("Deconvolution Method") + ylab("")+ 
+  stat_summary(
+      geom = "point",
+      shape = 3,
+      size = 5,
+      fun = "median",show.legend = F)+
+  coord_flip()
+
+
+library(ggpubr)
+library(ggsci)
+celltype_col = pal_lancet("lanonc")(4)
+new = res_ROS_out_all2 %>% group_by(CellType,Method) %>%
+  mutate(Spearman_mean = mean(Spearman,na.rm = T),
+         Method = ifelse(Method == "EnsDeconv","EnsDeconv",Method)) 
+
+checkkkk =new %>% group_by(CellType,Method) %>%  
+  mutate(p_mean = mean(Spearman_mean,na.rm = T),
+         Method = ifelse(Method == "EnsDeconv","EnsDeconv",Method)) %>% 
+  dplyr::filter(!str_detect(Method,"fold|allgene|mean|Mean")) 
+
+new %>% ggerrorplot("Method", "Spearman_mean",order = levels(reorder(checkkkk$Method, checkkkk$p_mean, median, order = TRUE)), 
+desc_stat = "median_mad", error.plot = "errorbar")+
+  geom_point(aes(color =CellType),size = 4)+      scale_color_manual(
+    values=celltype_col)+ theme(legend.title = element_blank(),
+    legend.text=element_text(size=12),plot.title = element_text(hjust = 0.5))+xlab("Deconvolution Method") + ylab("")+ 
+  stat_summary(
+      geom = "point",
+      shape = 3,
+      size = 5,
+      fun = "median",show.legend = F)+
+  coord_flip()
+```
+
+
+
