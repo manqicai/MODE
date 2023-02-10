@@ -79,6 +79,11 @@ FisherSig_gen <- function(cpgpath ="E:/Luo2022/cpg_snm3C.rds"){
 
   colnames(coverage4) = colnames(meth4) = c('Astro', 'Micro_Endo', 'Neuro', 'Oligo_MBP')
 
+  sig_all <- meth4/coverage4
+  ind <- which(!is.na(rowSums(sig_all)))
+  meth4 <- meth4[ind,]
+  coverage4 <- coverage4[ind,]
+  sig_all <- sig_all[ind,]
   Mrk <- lapply(1:4, function(j){
     dnam_pval <- sapply(1:nrow(meth4), function(i) {
       m = c(meth4[i,j], sum(meth4[i,-j]))
@@ -98,5 +103,5 @@ FisherSig_gen <- function(cpgpath ="E:/Luo2022/cpg_snm3C.rds"){
     names(dnam_pval) = rownames(meth4)
     return(sort(dnam_pval))
   })
-  return(list(Mrk = Mrk, Mrk_twosided= Mrk_twosided))
+  return(list(Mrk = Mrk, Mrk_twosided= Mrk_twosided,sig_all = sig_all))
 }
