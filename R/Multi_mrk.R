@@ -59,7 +59,11 @@ Multi_mrk <- function(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_meth
   com1 <-com1 %>% ungroup() %>% mutate_at({{ct_ind}},function(p) {
     p[p>1]=1
     return(p)}) %>%
-    mutate_at({{ct_ind}},function(p) {ACAT(t(matrix(c(p,eqval),ncol = 2)))})
+    mutate_at({{ct_ind}},function(p) {
+      if(sum(p==1) >0 & sum(p==0) >0){
+        p[p==0] = 1e-130
+      }
+      ACAT(t(matrix(c(p,eqval),ncol = 2)))})
 
   # Adjust pvalue
   com1 <-com1 %>%   mutate_at({{ct_ind}},function(p) {p.adjust(p,method = padjust_method)})
@@ -78,17 +82,17 @@ Multi_mrk <- function(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_meth
   # Combine with DE
   suppressMessages(com3 <- com2 %>% left_join(DE_df))
 
-  output <- lapply(ct_ind, function(i){
+  output_mrk <- lapply(ct_ind, function(i){
     sub = paste0(i,"_DMR")
     sub_de = paste0(i,"_DE")
     #filter(.data[[sub]]>cutoff_val & .data[[i]] <pval_threshold)%>%
     com4 <- com3 %>% dplyr::select(TargetID,RefGene, starts_with(i),GeneGroup) %>% ungroup() %>%
-      filter(.data[[sub]]>cutoff_val)%>%
+      filter(.data[[sub]]>cutoff_val& .data[[i]] <pval_threshold)%>%
       filter( str_detect(GeneGroup,as.character(Gene_group))) %>% arrange(.data[[sub_de]]) %>%
       dplyr::slice(1:cutoff_DE)
     return(com4$TargetID)
   })
-  output <- unlist(output)
+  output <- unlist(output_mrk)
   output <- output[!duplicated(output)]
 
   sig <- beta_mtx[intersect(output,rownames(beta_mtx)),]
@@ -144,7 +148,8 @@ Multi_mrk <- function(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_meth
 
 
   #message(paste0("Mean cor: ",mean(diag(cor(res_ROS$EnsDeconv$ensemble_p, frac_true, method = 's')))))
-  return(list(sig = sig, res_ROS = res_ROS,mean_cor = mean(diag(cor(res_ROS$EnsDeconv$ensemble_p, frac_true, method = 's')))))
+  return(list(sig = sig, res_ROS = res_ROS,
+              mean_cor = mean(diag(cor(res_ROS$EnsDeconv$ensemble_p, frac_true, method = 's'))),output_mrk))
 }
 
 

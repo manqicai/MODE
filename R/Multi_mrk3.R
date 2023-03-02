@@ -79,11 +79,14 @@ Multi_mrk3 <- function(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_met
   }
 
   # Second combine DM, DE and eQTM
-  eqval <- com1$eQTM_pval
+
   com2 <-com1 %>% ungroup() %>% mutate_at({{ct_ind}},function(p) {
     p[p>1]=1
     return(p)})
   for (i in ct_ind) {
+    com2 <- com2 %>% filter(!((.data[[paste0(i,"_DE")]]==1 & .data[[i]] ==0)|
+                                (.data[[paste0(i,"_DE")]]==0 & .data[[i]] ==1)))
+    eqval <- com2$eQTM_pval
     com2[[i]]=ACAT(t(matrix(c(com2[[i]],eqval,com2[[paste0(i,"_DE")]]),ncol = 3)))
   }
 
@@ -92,17 +95,17 @@ Multi_mrk3 <- function(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_met
   com3 <-com2 %>%   mutate_at({{ct_ind}},function(p) {p.adjust(p,method = padjust_method)})
 
 
-  output <- lapply(ct_ind, function(i){
+  output_mrk <- lapply(ct_ind, function(i){
     sub = paste0(i,"_DMR")
     sub_de = paste0(i,"_DE")
 
     fin <- com3 %>% dplyr::select(TargetID,RefGene, starts_with(i),GeneGroup) %>% ungroup() %>%
-      filter(.data[[sub]]>cutoff_val)%>%
+      filter(.data[[sub]]>cutoff_val& .data[[i]] <pval_threshold)%>%
       filter( str_detect(GeneGroup,as.character(Gene_group)))  %>% arrange(.data[[i]]) %>%
       dplyr::slice(1:cutoff_DE)
     return(fin$TargetID)
   })
-  output <- unlist(output)
+  output <- unlist(output_mrk)
   output <- output[!duplicated(output)]
 
   sig <- beta_mtx[intersect(output,rownames(beta_mtx)),]
@@ -160,6 +163,7 @@ Multi_mrk3 <- function(DM_df = DM_df,eQTM_df = eQTM_df,DE_df = DE_df,padjust_met
     res_ROS[["allgene_res"]] <- append(res_ROS[["allgene_res"]],list(new_list))
   }
   #message(paste0("Mean cor: ",mean(diag(cor(res_ROS$EnsDeconv$ensemble_p, frac_true, method = 's')))))
-  return(list(sig = sig, res_ROS = res_ROS,mean_cor = mean(diag(cor(res_ROS$EnsDeconv$ensemble_p, frac_true, method = 's')))))
+  return(list(sig = sig, res_ROS = res_ROS,
+              mean_cor = mean(diag(cor(res_ROS$EnsDeconv$ensemble_p, frac_true, method = 's'))),output_mrk))
 }
 

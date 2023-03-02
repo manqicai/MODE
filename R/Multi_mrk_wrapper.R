@@ -23,7 +23,7 @@ Multi_mrk_wrapper <- function(com_params,my_DM_df,my_eQTM_df,my_DE_df,my_DM_df_o
                               my_DE_df_onesided,ct_ind = c("Astro","Micro_Endo", "Neuro","Oligo_MBP"),
                               beta_mtx = sig_all,
                               B = ros_dna_mtx_sub,frac_true = ROS_true_4ct,
-                              ncore = 20,dmet_list = c("CIBERSORT","EPIC","FARDEEP"),probeInfo = "ROSMAP"){
+                              ncore = 20,dmet_list = c("CIBERSORT","EPIC","FARDEEP"),probeInfo = "ROSMAP",padjust_method = "bonferroni"){
 
   pb <- progress_bar$new(
     format = "Current : :current [:bar] :elapsed | percent: :percent",
@@ -61,33 +61,33 @@ Multi_mrk_wrapper <- function(com_params,my_DM_df,my_eQTM_df,my_DE_df,my_DM_df_o
     source("D:/Manqi/deconv.ensemble/R/ensemble_prep.R")
     source("D:/Manqi/deconv.ensemble/R/analyze_dset.R")
     source("D:/Manqi/deconv.ensemble/R/get_metric_wrap.R")
-    output <- Multi_mrk(DM_df = my_DM_df,eQTM_df = my_eQTM_df,DE_df = my_DE_df,padjust_method = "bonferroni",
+    output <- Multi_mrk(DM_df = my_DM_df,eQTM_df = my_eQTM_df,DE_df = my_DE_df,padjust_method = padjust_method,
                         ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
                         filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = beta_mtx,
                         sig_name = sig_name, Gene_group =com_params$Gene_group[rownum],B = B,frac_true = frac_true,
                         include_minfi = com_params$include_minfi[rownum], dmet_list = dmet_list,probeInfo = probeInfo)
-    output_onesided <- Multi_mrk(DM_df = my_DM_df_onesided,eQTM_df = my_eQTM_df,DE_df = my_DE_df_onesided,padjust_method = "bonferroni",
+    output_onesided <- Multi_mrk(DM_df = my_DM_df_onesided,eQTM_df = my_eQTM_df,DE_df = my_DE_df_onesided,padjust_method = padjust_method,
                                  ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
                                  filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = beta_mtx,
                                  sig_name = sig_name, Gene_group =com_params$Gene_group[rownum],B = B,frac_true = frac_true,
                                  include_minfi = com_params$include_minfi[rownum], dmet_list = dmet_list,probeInfo = probeInfo )
 
-    output2 <- Multi_mrk2(DM_df = my_DM_df,eQTM_df = my_eQTM_df,DE_df = my_DE_df,padjust_method = "bonferroni",
+    output2 <- Multi_mrk2(DM_df = my_DM_df,eQTM_df = my_eQTM_df,DE_df = my_DE_df,padjust_method = padjust_method,
                           ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
                           filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = beta_mtx,
                           sig_name = sig_name, Gene_group =com_params$Gene_group[rownum],B = B,frac_true = frac_true,
                           include_minfi =  com_params$include_minfi[rownum] , dmet_list = dmet_list,probeInfo = probeInfo )
-    output_onesided2 <- Multi_mrk2(DM_df = my_DM_df_onesided,eQTM_df = my_eQTM_df,DE_df = my_DE_df_onesided,padjust_method = "bonferroni",
+    output_onesided2 <- Multi_mrk2(DM_df = my_DM_df_onesided,eQTM_df = my_eQTM_df,DE_df = my_DE_df_onesided,padjust_method = padjust_method,
                                    ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
                                    filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = beta_mtx,
                                    sig_name = sig_name, Gene_group =com_params$Gene_group[rownum],B = B,frac_true = frac_true,
                                    include_minfi = com_params$include_minfi[rownum], dmet_list = dmet_list,probeInfo = probeInfo )
-    output3 <- Multi_mrk3(DM_df = my_DM_df,eQTM_df = my_eQTM_df,DE_df = my_DE_df,padjust_method = "bonferroni",
+    output3 <- Multi_mrk3(DM_df = my_DM_df,eQTM_df = my_eQTM_df,DE_df = my_DE_df,padjust_method = padjust_method,
                           ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
                           filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = beta_mtx,
                           sig_name = sig_name, Gene_group =com_params$Gene_group[rownum],B = B,frac_true = frac_true,
                           include_minfi = com_params$include_minfi[rownum], dmet_list = dmet_list,probeInfo = probeInfo )
-    output_onesided3 <- Multi_mrk3(DM_df = my_DM_df_onesided,eQTM_df = my_eQTM_df,DE_df = my_DE_df_onesided,padjust_method = "bonferroni",
+    output_onesided3 <- Multi_mrk3(DM_df = my_DM_df_onesided,eQTM_df = my_eQTM_df,DE_df = my_DE_df_onesided,padjust_method = padjust_method,
                                    ct_ind = ct_ind,pval_threshold = com_params$pval_threshold[rownum],
                                    filter_type = com_params$filter_type[rownum],cutoff_val = com_params$cutoff_val[rownum],DE_type = com_params$DE_type[rownum],cutoff_DE = com_params$cutoff_DE[rownum],beta_mtx = beta_mtx,
                                    sig_name = sig_name, Gene_group =com_params$Gene_group[rownum],B = B,frac_true = frac_true,
